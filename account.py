@@ -1,146 +1,119 @@
+from datetime import datetime
+from enum import Enum
+class TransactionType(Enum):
+    CREDIT = "Credit"
+    DEBIT = "Debit"
+    LOAN = "Loan"
+    LOAN_REPAYMENT = "Loan Repayment"
+class Transaction:
+    def __init__(self, narration, amount, transaction_type):
+        self.date_time = datetime.now()
+        self.narration = narration
+        self.amount = amount
+        self.transaction_type = transaction_type
+    def __str__(self):
+        formatted_time = self.date_time.strftime("%Y-%m-%d %H:%M:%S")
+        return f"{formatted_time}: {self.transaction_type.value} of {self.amount} - {self.narration}"
 class Account:
-    def __init__(self, owner, balance=0, min_balance=50):
+    def __init__(self, owner, account_number, minimum_balance=50):
+        self._balance = 0
+        self._account_number = account_number
         self.owner = owner
-        self.balance = balance
-        self.min_balance = min_balance
-        self.loan_balance = 0
-        self.deposits = []
-        self.withdrawals = []
-        self.loans = []
-        self.repaid = []
-        self.interests = []
-        self.transfers = {} 
+        self.minimum_balance = minimum_balance
+        self.transactions = []
         self.is_frozen = False
+        self.is_closed = False  
+        self.loan_amount = 0
+    def _update_balance(self):
+        self._balance = sum(transact.amount if transact.transaction_type == TransactionType.CREDIT else -transact.amount for transact in self.transactions)
+    def _check_account_status(self):
+        if self.is_closed:
+            return "Account is closed."
+        if self.is_frozen:
+            return "Account is frozen."
+        return None
     def deposit(self, amount):
-        if self.is_frozen:
-            print("Account is frozen: can't deposit")
-            return
-        if amount > 0:
-            self.balance += amount
-            self.deposits.append(f"Deposited: {amount}")
-        else:
-            print("Deposit amount must be positive")
+        status = self._check_account_status()
+        if status:
+            return status
+        if amount <= 0:
+            return "Deposit amount must be positive."
+        transaction = Transaction("Deposit", amount, TransactionType.CREDIT)
+        self.transactions.append(transaction)
+        self._update_balance()
+        return f"Deposited {amount}. New balance: {self.get_balance()}"
     def withdraw(self, amount):
-        if self.is_frozen:
-            print("Account is frozen: can't withdraw")
-            return
+        status = self._check_account_status()
+        if status:
+            return status
         if amount <= 0:
-            print("Withdrawal amount must be positive")
-            return
-        if self.balance - amount < self.min_balance:
-            print("Withdrawal would violate minimum balance requirement")
-        elif amount <= self.balance:
-            self.balance -= amount
-            self.withdrawals.append(f"Withdrawn: {amount}")
-        else:
-            print("Insufficient funds")
-    def transfer(self, amount, recipient):
-        if self.is_frozen:
-            print("Account is frozen: can't transfer")
-            return
-        if amount <= 0:
-            print("Transfer amount must be positive")
-            return
-        if self.balance - amount < self.min_balance:
-            print("Transfer would violate minimum balance requirement")
-        elif amount <= self.balance:
-            self.balance -= amount
-            recipient.balance += amount
-            transfer_detail = f"Transferred: {amount} to {recipient.owner}"
-            if recipient.owner in self.transfers:
-                self.transfers[recipient.owner].append(transfer_detail)
-            else:
-                self.transfers[recipient.owner] = [transfer_detail]
-            recipient.deposits.append(f"Received: {amount} from {self.owner}")
-        else:
-            print("Insufficient funds")
-    def get_loan(self, amount):
-        if self.is_frozen:
-            print("Account is frozen: can't get loan")
-            return
-        if amount > 0:
-            self.loan_balance += amount
-            self.balance += amount
-            self.loans.append(f"Loan received: {amount}")
-        else:
-            print("Loan amount must be positive")
+            return "Withdrawal amount must be positive."
+        if self.get_balance() - amount < self.minimum_balance:
+            return "Insufficient funds for withdrawal."
+        transaction = Transaction("Withdrawal", amount, TransactionType.DEBIT)
+        self.transactions.append(transaction)
+        self._update_balance()
+        return f"Withdrew {amount}. New balance: {self.get_balance()}"
+    def transfer_funds(self, amount, target_account):
+        status = self._check_account_status()
+        if status:
+            return status
+        if self.withdraw(amount) == "Insufficient funds for withdrawal.":
+            return "Transfer failed due to insufficient funds."
+        target_account.deposit(amount)  
+        return f"Transferred {amount} to {target_account.owner}. New balance: {self.get_balance()}"
+    def get_balance(self):
+        return self._balance 
+    def request_loan(self, amount):
+        status = self._check_account_status()
+        if status:
+            return status
+        self.loan_amount += amount
+        transaction = Transaction("Loan Request", amount, TransactionType.LOAN)
+        self.transactions.append(transaction)
+        self._update_balance()
+        return f"Loan of {amount} requested."
     def repay_loan(self, amount):
-        if self.is_frozen:
-            print("Account is frozen: can't repay loan")
-            return
-        if amount <= 0:
-            print("Repayment amount must be positive")
-            return
-        if amount <= self.balance and amount <= self.loan_balance:
-            self.balance -= amount
-            self.loan_balance -= amount
-            self.repaid.append(f"Loan repaid: {amount}")
-        else:
-            print("Insufficient funds or loan balance to repay")
+        status = self._check_account_status()
+        if status:
+            return status
+        if amount > self.loan_amount:
+            return "Cannot repay more than the loan amount."
+        self.loan_amount -= amount
+        transaction = Transaction("Loan Repayment", amount, TransactionType.LOAN_REPAYMENT)
+        self.transactions.append(transaction)
+        self._update_balance()
+        return f"Repaid {amount} towards loan."
     def view_account_details(self):
-        return f"Owner: {self.owner}, Balance: {self.balance}, Loan Balance: {self.loan_balance}, Minimum Balance: {self.min_balance}"
+        return f"Owner: {self.owner}, Balance: {self.get_balance()}, Account Number: {self._account_number}"
     def change_account_owner(self, new_owner):
-        if new_owner:
-            self.owner = new_owner
-        else:
-            print("New owner name cannot be empty")
-    def get_statement(self):
-        print(f"Account Statement for {self.owner}:")
-        print("Deposits:")
-        for deposit in self.deposits:
-            print(f"  {deposit}")
-        print("Withdrawals:")
-        for withdrawal in self.withdrawals:
-            print(f"  {withdrawal}")
-        print("Transfers:")
-        for recipient, transfers in self.transfers.items():
-            print(f"  To {recipient}:")
-            for transfer in transfers:
-                print(f"    {transfer}")
-        print("Loans:")
-        for loan in self.loans:
-            print(f"  {loan}")
-        print("Loan Repayments:")
-        for repayment in self.repaid:
-            print(f"  {repayment}")
-        print("Interest Applied:")
-        for interest in self.interests:
-            print(f"  {interest}")
-        print(f"Current Balance: {self.balance}, Loan Balance: {self.loan_balance}")
-    def apply_interest(self):
-        if not self.is_frozen:
-            interest = self.balance * 0.05
-            self.balance += interest
-            self.interests.append(f"Interest applied: {interest}")
-        else:
-            print("Account is frozen: can't apply interest")
+        self.owner = new_owner
+        return f"Account owner changed to {new_owner}."
+    def account_statement(self):
+        return "\n".join(str(transaction) for transaction in self.transactions)
+    def calculate_interest(self):
+        interest = self.get_balance() * 0.05
+        self.deposit(interest)
+        return f"Interest of {interest} applied."
     def freeze_account(self):
         self.is_frozen = True
+        return "Account frozen."
     def unfreeze_account(self):
         self.is_frozen = False
+        return "Account unfrozen."
     def set_minimum_balance(self, amount):
-        if amount >= 0:
-            self.min_balance = amount
-        else:
-            print("Minimum balance cannot be negative")
+        self.minimum_balance = amount
+        return f"Minimum balance set to {amount}."
     def close_account(self):
-        if self.loan_balance > 0:
-            print("Cannot close account with outstanding loan balance")
-            return
-        self.balance = 0
-        self.loan_balance = 0
-        self.is_frozen = True
-        print("Account closed")
+        self.is_closed = True  
+        self._balance = 0
+        self.transactions.clear()
+        return "Account closed."
 
-
-
-
-
-
-
-
-
-
-
-
-
+account1 = Account("Rigbe", "1000281425963")
+account2 = Account("Hellen", "1000200400940")
+print(account1.deposit(1000))
+print(account1.withdraw(200))
+print(account1.transfer_funds(300, account2))
+print(account1.view_account_details())
+print(account1.account_statement())
